@@ -3,82 +3,100 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>LLM Agent POC – Browser-Based Multi-Tool Reasoning</title>
+  <title>LLM Agent POC – v2 (Always-on Settings)</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <style>
-    body { background: linear-gradient(135deg, #0f172a, #1e293b); color: #e2e8f0; font-family: 'Inter', sans-serif; }
-    .navbar { background: #111827; }
-    .card { background: #0b1220; border: 1px solid #1f2937; border-radius: 12px; }
-    .form-control, .form-select { background:#0b1220; color:#e2e8f0; border-color:#1f2937; }
-    .btn-primary { background:#2563eb; border-color:#1d4ed8; border-radius: 8px; }
-    .btn-outline-light { border-color:#334155; border-radius: 8px; }
-    #chat { height: 60vh; overflow-y: auto; padding-right: 6px; }
-    .msg { white-space: pre-wrap; border-radius: 8px; }
-    .msg.agent { border-left: 4px solid #60a5fa; }
-    .msg.user { border-left: 4px solid #34d399; }
-    .msg.tool { border-left: 4px solid #f59e0b; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .925rem; }
-    .small-muted { color:#9ca3af; font-size:.9rem; }
-    .sticky-input { position: sticky; bottom: 0; background: #0f172a; padding-top: .5rem; }
+    :root{
+      --bg:#0e1320; --panel:#0b1220; --line:#1f2937; --text:#e5e7eb; --muted:#9ca3af;
+      --accent:#3b82f6; --accent2:#22c55e; --accent3:#f59e0b;
+    }
+    html,body{height:100%}
+    body { background: radial-gradient(1200px 600px at 20% -10%, #0b1220 20%, #0e1320 60%), #0e1320; color: var(--text); font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    .navbar { background: #0a0f1a; border-bottom: 1px solid var(--line); }
+    .brand{font-weight:700; letter-spacing:.2px}
+    .panel { background: var(--panel); border:1px solid var(--line); border-radius: 14px; }
+    .panel-header{border-bottom:1px solid var(--line)}
+    .form-control,.form-select{ background:#0a1324; color:var(--text); border-color:var(--line); }
+    .form-control::placeholder{color:#6b7280}
+    .btn-primary{ background:var(--accent); border-color:#2563eb; border-radius:10px}
+    .btn-outline-light{ border-color:#334155; border-radius:10px}
+    .btn-danger{ border-radius:10px}
+    .badge-soft{ background:#0a1324; border:1px solid var(--line); }
+    #chat { height: 58vh; overflow-y: auto; padding-right: 6px; }
+    .msg { white-space: pre-wrap; border-radius: 10px; }
+    .msg.agent { border-left: 4px solid var(--accent); }
+    .msg.user  { border-left: 4px solid var(--accent2); }
+    .msg.tool  { border-left: 4px solid var(--accent3); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .92rem; }
+    .small-muted { color:var(--muted); font-size:.9rem; }
     .kbd { padding:.1rem .35rem; border:1px solid #475569; border-radius:.35rem; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-    .divider { height:1px; background:#1f2937; margin: .75rem 0; }
+    .settings-grid{ display:grid; grid-template-columns: repeat(12, 1fr); gap:.6rem; }
+    .settings-grid .col-2 { grid-column: span 2; }
+    .settings-grid .col-3 { grid-column: span 3; }
+    .settings-grid .col-4 { grid-column: span 4; }
+    .settings-grid .col-6 { grid-column: span 6; }
+    .settings-grid .col-12{ grid-column: span 12; }
     .alert-area { position: sticky; top: 0; z-index: 1020; }
-    .settings-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .75rem; }
-    code.inline { background:#0b1220; border:1px solid #1f2937; padding:.05rem .35rem; border-radius:.35rem; }
+    .footer-hints{ display:flex; justify-content:space-between; gap:8px; align-items:center }
+    @media (max-width: 992px){ #chat{height:52vh} .settings-grid{grid-template-columns: repeat(6, 1fr);} .settings-grid .col-4{grid-column:span 6} .settings-grid .col-3{grid-column:span 6} .settings-grid .col-2{grid-column:span 3} }
+    @media (max-width: 576px){ .settings-grid{grid-template-columns: repeat(4, 1fr);} .settings-grid [class*=\"col-\"]{grid-column:span 4} }
   </style>
 </head>
 <body>
   <nav class="navbar navbar-dark">
-    <div class="container-fluid">
-      <span class="navbar-brand fw-bold">⚡ LLM Agent POC</span>
-      <div class="d-flex gap-2 align-items-center">
-        <select id="provider" class="form-select form-select-sm" style="width: 200px;">
-          <option value="openai" selected>OpenAI-compatible</option>
-          <option value="openrouter">OpenRouter (compat)</option>
-          <option value="perplexity">Perplexity (compat)</option>
-          <option value="gemini">Gemini (OpenAI compat)</option>
-          <option value="aipipe">AiPipe (OpenAI compat)</option>
-          <option value="custom">Custom</option>
-        </select>
-        <input id="model" class="form-control form-control-sm" style="width: 240px;" placeholder="model (e.g., gpt-4o-mini)" />
-        <span id="status" class="badge text-bg-secondary d-none">—</span>
-        <button class="btn btn-outline-light btn-sm" data-bs-toggle="collapse" data-bs-target="#settings">Settings</button>
-        <button id="clearBtn" class="btn btn-sm btn-danger">Clear</button>
+    <div class="container-fluid py-2">
+      <div class="d-flex align-items-center gap-3">
+        <span class="brand">⚡ LLM Agent POC</span>
+        <span id="status" class="badge text-bg-secondary badge-soft">Ready</span>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <button id="clearBtn" class="btn btn-sm btn-danger">Clear Chat</button>
       </div>
     </div>
   </nav>
 
   <div class="container py-3">
-    <div class="alert-area" id="alerts"></div>
-
-    <div id="settings" class="collapse">
-      <div class="card mb-3">
-        <div class="card-body">
-          <h6 class="mb-3">🔧 API & Tools</h6>
-          <div class="settings-grid">
-            <div>
-              <label class="form-label">Base URL</label>
-              <input id="baseUrl" class="form-control" placeholder="https://api.openai.com" />
-            </div>
-            <div>
-              <label class="form-label">API Key</label>
-              <input id="apiKey" type="password" class="form-control" placeholder="sk-..." />
-            </div>
-            <div>
-              <label class="form-label">Google Search API Key</label>
-              <input id="googleKey" type="password" class="form-control" placeholder="AIza..." />
-            </div>
-            <div>
-              <label class="form-label">Google CSE CX</label>
-              <input id="googleCx" class="form-control" placeholder="custom-search-engine-id" />
-            </div>
-            <div>
-              <label class="form-label">AiPipe Endpoint</label>
-              <input id="aipipeUrl" class="form-control" placeholder="https://your-aipipe.example.com/proxy" />
-            </div>
-            <div>
-              <label class="form-label">Max tool loops</label>
-              <input id="maxLoops" type="number" value="6" min="1" class="form-control" />
-            </div>
+    <div class="panel mb-3">
+      <div class="panel-header p-3 pb-2"><div class="small-muted">Settings (always visible)</div></div>
+      <div class="p-3 pt-2">
+        <div class="settings-grid">
+          <div class="col-3">
+            <label class="form-label">Provider</label>
+            <select id="provider" class="form-select">
+              <option value="openai" selected>OpenAI-compatible</option>
+              <option value="openrouter">OpenRouter (compat)</option>
+              <option value="perplexity">Perplexity (compat)</option>
+              <option value="gemini">Gemini (OpenAI compat)</option>
+              <option value="aipipe">AiPipe (OpenAI compat)</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div class="col-3">
+            <label class="form-label">Model</label>
+            <input id="model" class="form-control" placeholder="gpt-4o-mini" />
+          </div>
+          <div class="col-3">
+            <label class="form-label">Base URL</label>
+            <input id="baseUrl" class="form-control" placeholder="https://api.openai.com" />
+          </div>
+          <div class="col-3">
+            <label class="form-label">API Key</label>
+            <input id="apiKey" type="password" class="form-control" placeholder="••••••" />
+          </div>
+          <div class="col-3">
+            <label class="form-label">Google Key</label>
+            <input id="googleKey" type="password" class="form-control" placeholder="AIza…" />
+          </div>
+          <div class="col-3">
+            <label class="form-label">Google CX</label>
+            <input id="googleCx" class="form-control" placeholder="CSE ID" />
+          </div>
+          <div class="col-4">
+            <label class="form-label">AiPipe Endpoint</label>
+            <input id="aipipeUrl" class="form-control" placeholder="https://your-aipipe.example.com/proxy" />
+          </div>
+          <div class="col-2">
+            <label class="form-label">Max loops</label>
+            <input id="maxLoops" type="number" value="6" min="1" class="form-control" />
           </div>
         </div>
       </div>
@@ -88,21 +106,18 @@
       <div class="small-muted mb-2">💡 Tip: ask it to <span class="kbd">search</span>, <span class="kbd">run_js</span>, or call <span class="kbd">aipipe_run</span>.</div>
     </div>
 
-    <div class="sticky-input">
-      <div class="divider"></div>
+    <div class="panel p-3">
       <div class="input-group">
         <textarea id="userInput" class="form-control" rows="2" placeholder="Type a message and press Enter…"></textarea>
         <button id="sendBtn" class="btn btn-primary">▶ Send</button>
       </div>
-      <div class="d-flex justify-content-between mt-2 small-muted">
-        <div>
-          Provider endpoints are OpenAI-style. For Gemini, use base URL <code class="inline">https://generativelanguage.googleapis.com/openai/</code> with a Google API key.
-        </div>
-        <div>
-          <span class="kbd">Shift+Enter</span> for newline
-        </div>
+      <div class="footer-hints mt-2 small-muted">
+        <div>For Gemini, use base URL <code>https://generativelanguage.googleapis.com/openai/</code> with a Google API key.</div>
+        <div><span class="kbd">Shift+Enter</span> for newline</div>
       </div>
     </div>
+
+    <div class="alert-area" id="alerts"></div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -120,89 +135,122 @@
     googleCx: document.getElementById('googleCx'),
     aipipeUrl: document.getElementById('aipipeUrl'),
     maxLoops: document.getElementById('maxLoops'),
+    status: document.getElementById('status'),
+    clear: document.getElementById('clearBtn'),
   };
 
   const PROVIDERS = {
-    openai:      { baseUrl: 'https://api.openai.com',                                 model: 'gpt-4o-mini' },
-    openrouter:  { baseUrl: 'https://openrouter.ai/api',                             model: 'openai/gpt-4o-mini' },
-    perplexity:  { baseUrl: 'https://api.perplexity.ai',                             model: 'llama-3.1-sonar-small-128k-online' },
-    gemini:      { baseUrl: 'https://generativelanguage.googleapis.com/openai/',     model: 'gemini-1.5-pro' },
-    aipipe:      { baseUrl: 'https://your-aipipe.example.com/openai',                model: 'gpt-4o-mini' },
-    custom:      { baseUrl: '',                                                      model: '' }
+    openai:      { baseUrl: 'https://api.openai.com',                            model: 'gpt-4o-mini' },
+    openrouter:  { baseUrl: 'https://openrouter.ai/api',                         model: 'openai/gpt-4o-mini' },
+    perplexity:  { baseUrl: 'https://api.perplexity.ai',                         model: 'llama-3.1-sonar-small-128k-online' },
+    gemini:      { baseUrl: 'https://generativelanguage.googleapis.com/openai/', model: 'gemini-1.5-pro' },
+    aipipe:      { baseUrl: 'https://your-aipipe.example.com/openai',            model: 'gpt-4o-mini' },
+    custom:      { baseUrl: '',                                                  model: '' }
   };
 
+  // persistence
+  function persist(){ const obj={}; for(const k of ['provider','baseUrl','model','apiKey','googleKey','googleCx','aipipeUrl','maxLoops']) obj[k]=els[k]?.value||''; localStorage.setItem('agent_settings_v2', JSON.stringify(obj)); }
+  function restore(){ try{ const s=JSON.parse(localStorage.getItem('agent_settings_v2')||'{}'); for(const k in s){ if(els[k]) els[k].value=s[k]; } }catch(_){} }
+  restore();
+
+  // apply provider preset or status
   function applyProviderPreset() {
     const p = PROVIDERS[els.provider.value] || {};
-    els.baseUrl.value = p.baseUrl || '';
-    els.model.value = p.model || '';
-    const badge = document.getElementById('status');
-    if (badge) {
-      badge.classList.remove('d-none');
-      badge.textContent = `${els.provider.value} · ${els.model.value || 'model?'}`;
-    }
+    if (!els.baseUrl.value) els.baseUrl.value = p.baseUrl || '';
+    if (!els.model.value) els.model.value = p.model || '';
+    els.status.textContent = `${els.provider.value} · ${els.model.value || 'model?'}`;
+    persist();
   }
-  els.provider.addEventListener('change', applyProviderPreset);
+  els.provider.addEventListener('change', () => { const p=PROVIDERS[els.provider.value]||{}; els.baseUrl.value=p.baseUrl||''; els.model.value=p.model||''; applyProviderPreset(); });
+  for (const k of ['baseUrl','model','apiKey','googleKey','googleCx','aipipeUrl','maxLoops']) els[k].addEventListener('input', persist);
   applyProviderPreset();
 
+  // UI helpers
   function showAlert(message, variant = 'warning', timeout = 4500) {
     const id = 'al_' + Math.random().toString(36).slice(2);
-    const html = `<div id="${id}" class="alert alert-${variant} alert-dismissible fade show" role="alert">${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
+    const html = `<div id="${id}" class="alert alert-${variant} alert-dismissible fade show" role="alert">
+      ${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
     els.alerts.insertAdjacentHTML('beforeend', html);
     if (timeout) setTimeout(() => { const el = document.getElementById(id); if (el) bootstrap.Alert.getOrCreateInstance(el).close(); }, timeout);
   }
+  function escapeHtml(str){ return String(str).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+  function addMsg(role, content, kind='agent'){ const card=document.createElement('div'); card.className=`card mb-2 msg ${kind}`; card.innerHTML=`<div class="card-body py-2">${escapeHtml(content)}</div>`; els.chat.appendChild(card); els.chat.scrollTop=els.chat.scrollHeight; }
+  function addToolMsg(title, obj){ const card=document.createElement('div'); card.className='card mb-2 msg tool'; const pretty=escapeHtml(JSON.stringify(obj,null,2)); card.innerHTML=`<div class="card-body py-2"><div class="small-muted mb-1">${title}</div><pre class="mb-0">${pretty}</pre></div>`; els.chat.appendChild(card); els.chat.scrollTop=els.chat.scrollHeight; }
 
-  function addMsg(role, content, kind = 'agent') {
-    const which = kind || (role === 'user' ? 'user' : 'agent');
-    const card = document.createElement('div');
-    card.className = `card mb-2 msg ${which}`;
-    card.innerHTML = `<div class="card-body py-2">${escapeHtml(content)}</div>`;
-    els.chat.appendChild(card);
-    els.chat.scrollTop = els.chat.scrollHeight;
-  }
-
-  function addToolMsg(title, obj) {
-    const card = document.createElement('div');
-    card.className = 'card mb-2 msg tool';
-    const pretty = escapeHtml(JSON.stringify(obj, null, 2));
-    card.innerHTML = `<div class="card-body py-2"><div class="small-muted mb-1">${title}</div><pre class="mb-0">${pretty}</pre></div>`;
-    els.chat.appendChild(card);
-    els.chat.scrollTop = els.chat.scrollHeight;
-  }
-
-  function escapeHtml(str) {
-    return String(str).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
-  }
-
+  // Tools spec
   const toolsSpec = [
-    { type:'function', function:{ name:'google_search', description:'Search Google Custom Search', parameters:{ type:'object', properties:{ query:{type:'string'}, num:{type:'integer',default:5}}, required:['query'] } } },
+    { type:'function', function:{ name:'google_search', description:'Search Google Custom Search', parameters:{ type:'object', properties:{ query:{type:'string'}, num:{type:'integer', default:5, minimum:1, maximum:10}}, required:['query'] } } },
     { type:'function', function:{ name:'aipipe_run', description:'Call AiPipe proxy', parameters:{ type:'object', properties:{ flow:{type:'string'}, payload:{type:'object'}, endpoint:{type:'string'}}, required:['flow','payload'] } } },
-    { type:'function', function:{ name:'run_js', description:'Run JS in sandbox', parameters:{ type:'object', properties:{ code:{type:'string'}, timeout_ms:{type:'integer',default:2000}}, required:['code'] } } }
+    { type:'function', function:{ name:'run_js', description:'Run JS in sandboxed Worker', parameters:{ type:'object', properties:{ code:{type:'string'}, timeout_ms:{type:'integer', default:2000}}, required:['code'] } } }
   ];
 
-  const messages = [ { role:'system', content:'You are a browser LLM agent with google_search, aipipe_run, run_js tools. Use them wisely.' } ];
+  const messages = [ { role:'system', content:'You are a browser LLM agent with google_search, aipipe_run, and run_js tools. Decide when to use them. Keep responses concise and mention the tool when helpful.' } ];
 
-  async function tool_google_search(args) { /* unchanged */ }
-  async function tool_aipipe_run(args) { /* unchanged */ }
-  async function tool_run_js(args) { /* unchanged */ }
+  // Tool implementations
+  async function tool_google_search(args) {
+    const key = els.googleKey.value.trim();
+    const cx = els.googleCx.value.trim();
+    if (!key || !cx) throw new Error('Missing Google Search API Key or CSE CX (set above).');
+    const num = Math.min(Math.max(parseInt(args.num || 5, 10), 1), 10);
+    const url = new URL('https://www.googleapis.com/customsearch/v1');
+    url.searchParams.set('key', key); url.searchParams.set('cx', cx);
+    url.searchParams.set('q', args.query); url.searchParams.set('num', String(num));
+    const res = await fetch(url.toString());
+    if (!res.ok) throw new Error('Google Search error: ' + res.status);
+    const data = await res.json();
+    const items = (data.items || []).map(it => ({ title: it.title, link: it.link, snippet: it.snippet }));
+    return { query: args.query, results: items };
+  }
+
+  async function tool_aipipe_run(args) {
+    const endpoint = (args.endpoint || els.aipipeUrl.value || '').trim();
+    if (!endpoint) throw new Error('Missing AiPipe endpoint URL.');
+    const res = await fetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ flow: args.flow, payload: args.payload }) });
+    if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error('AiPipe error: ' + res.status + (t ? (' ' + t) : '')); }
+    return await res.json();
+  }
+
+  async function tool_run_js(args) {
+    const code = String(args.code || ''); const timeoutMs = parseInt(args.timeout_ms || 2000, 10);
+    const workerCode = `
+      let logs = []; const origLog = console.log;
+      console.log = (...a) => { try { logs.push(a.map(x => typeof x==='string'?x:JSON.stringify(x)).join(' ')); } catch(_) { logs.push(String(a)); } origLog(...a); };
+      onmessage = async (e) => { const { code, timeoutMs } = e.data;
+        try { const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+          const fn = new AsyncFunction(code); const exec = fn();
+          const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout exceeded')), timeoutMs));
+          const started = Date.now(); const result = await Promise.race([exec, timeout]);
+          postMessage({ ok: true, result, logs, timeMs: Date.now() - started });
+        } catch (err) { postMessage({ ok: false, error: String(err), logs }); } };`;
+    const blob = new Blob([workerCode], { type: 'text/javascript' }); const worker = new Worker(URL.createObjectURL(blob));
+    return await new Promise((resolve) => { const timer = setTimeout(() => { try { worker.terminate(); } catch(_){} resolve({ ok:false, error:'Worker aborted (hard timeout)' }); }, Math.max(timeoutMs + 250, 1500)); worker.onmessage = (ev) => { clearTimeout(timer); worker.terminate(); resolve(ev.data); }; worker.postMessage({ code, timeoutMs }); });
+  }
 
   const TOOL_DISPATCH = { google_search: tool_google_search, aipipe_run: tool_aipipe_run, run_js: tool_run_js };
 
   function getClient(){ const baseUrl=els.baseUrl.value.trim().replace(/\/$/,''); const key=els.apiKey.value.trim(); const model=els.model.value.trim(); if(!baseUrl||!key||!model) throw new Error('Please set Base URL, API Key, and Model.'); return { baseUrl, key, model }; }
 
-  async function chatCompletion(payload){ const { baseUrl, key }=getClient(); const res=await fetch(baseUrl+'/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify(payload)}); if(!res.ok){const txt=await res.text().catch(()=>'' ); throw new Error('LLM error '+res.status+': '+txt);} return await res.json(); }
+  async function chatCompletion(payload){
+    const { baseUrl, key }=getClient();
+    const prov = els.provider.value;
+    const path = (prov === 'perplexity') ? '/chat/completions' : '/v1/chat/completions';
+    const res = await fetch(baseUrl + path, { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+key,'Accept':'application/json'}, body: JSON.stringify(payload) });
+    if(!res.ok){ const txt=await res.text().catch(()=>'' ); throw new Error('LLM error '+res.status+': '+txt); }
+    return await res.json();
+  }
 
   async function oneLLMStep(){ const { model }=getClient(); const payload={model,messages,tools:toolsSpec,tool_choice:'auto'}; const data=await chatCompletion(payload); const choice=(data.choices&&data.choices[0])||{}; const msg=choice.message||{}; const content=msg.content||''; const toolCalls=msg.tool_calls||[]; if(content) addMsg('assistant', content,'agent'); return toolCalls; }
 
-  async function executeToolCalls(toolCalls){ const jobs=toolCalls.map(async(tc)=>{ const name=tc.function?.name; let args={}; try{ args=JSON.parse(tc.function?.arguments||'{}'); }catch(_){} try{ const fn=TOOL_DISPATCH[name]; if(!fn) throw new Error('Unknown tool: '+name); const result=await fn(args); addToolMsg(`Tool: ${name}`,result); messages.push({role:'tool',tool_call_id:tc.id,content:JSON.stringify(result)});}catch(err){ const fail={ok:false,error:String(err)}; showAlert(`${name} failed: ${escapeHtml(String(err))}`,'danger'); addToolMsg(`Tool error: ${name}`,fail); messages.push({role:'tool',tool_call_id:tc.id,content:JSON.stringify(fail)});} }); await Promise.all(jobs); }
+  async function executeToolCalls(toolCalls){ const jobs=toolCalls.map(async(tc)=>{ const name=tc.function?.name; let args={}; try{ args=JSON.parse(tc.function?.arguments||'{}'); }catch(_){} try{ const fn=TOOL_DISPATCH[name]; if(!fn) throw new Error('Unknown tool: '+name); const result=await fn(args); addToolMsg(`Tool: ${name}`,result); messages.push({role:'tool',tool_call_id:tc.id,content:JSON.stringify(result)});}catch(err){ const fail={ok:false,error:String(err)}; showAlert(`${name} failed: ${String(err)}`,'danger'); addToolMsg(`Tool error: ${name}`,fail); messages.push({role:'tool',tool_call_id:tc.id,content:JSON.stringify(fail)});} }); await Promise.all(jobs); }
 
-  async function agentLoop(){ let loops=0; const MAX=Math.max(parseInt(els.maxLoops.value||'6',10),1); while(true){ if(loops++>MAX){showAlert('Stopped: reached max tool loops'); break;} let toolCalls=[]; try{ toolCalls=await oneLLMStep(); }catch(err){ showAlert('LLM step failed: '+escapeHtml(String(err)),'danger',8000); break; } if(toolCalls&&toolCalls.length){ await executeToolCalls(toolCalls); continue; } else break; }}
+  async function agentLoop(){ let loops=0; const MAX=Math.max(parseInt(els.maxLoops.value||'6',10),1); while(true){ if(loops++>MAX){showAlert('Stopped: reached max tool loops'); break;} let toolCalls=[]; try{ toolCalls=await oneLLMStep(); }catch(err){ showAlert('LLM step failed: '+String(err),'danger',8000); break; } if(toolCalls&&toolCalls.length){ await executeToolCalls(toolCalls); continue; } else break; }}
 
   async function onSend(){ const text=els.input.value.trim(); if(!text) return; els.input.value=''; addMsg('user',text,'user'); messages.push({role:'user',content:text}); await agentLoop(); }
-
   els.send.addEventListener('click',onSend);
   els.input.addEventListener('keydown',(e)=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); onSend(); }});
+  els.clear.addEventListener('click', () => { messages.splice(1); els.chat.innerHTML = '<div class="small-muted mb-2">💡 Tip: ask it to <span class="kbd">search</span>, <span class="kbd">run_js</span>, or call <span class="kbd">aipipe_run</span>.</div>'; addMsg('assistant','Cleared. Ready.','agent'); });
 
-  addMsg('assistant','✅ Ready. Configure Settings, then say something like: "Interview me and search for IBM." Tools: google_search, aipipe_run, run_js.','agent');
+  addMsg('assistant','Ready. Configure settings above, then try: "Interview me and search for IBM." Tools: google_search, aipipe_run, run_js. Providers: OpenAI, Perplexity, Gemini, OpenRouter, AiPipe.','agent');
   </script>
 </body>
 </html>
