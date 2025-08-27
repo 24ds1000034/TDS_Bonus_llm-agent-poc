@@ -3,126 +3,104 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>LLM Agent POC — v6 (AiPipe default + Diagnostics)</title>
+  <meta name="author" content="24DS1000034-George" />
+  <title>LLM Agent POC — v8 (Minimal + Logs)</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link href="./app.css" rel="stylesheet" />
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
 </head>
 <body>
-  <nav class="navbar navbar-dark gradient-nav">
-    <div class="container-fluid py-2 d-flex justify-content-between align-items-center">
-      <div class="d-flex align-items-center gap-3 flex-wrap">
-        <img src="./assets/logo.svg" alt="" class="logo d-none d-sm-inline-block" />
-        <span class="brand">⚡ LLM Agent POC</span>
-        <span id="status" class="badge text-bg-light text-dark badge-soft">Ready</span>
-        <span id="toolsBadge" class="badge text-bg-warning text-dark badge-soft">Tools: ON</span>
+  <header class="app-header border-bottom">
+    <div class="container py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div class="d-flex align-items-center gap-2">
+        <img src="./assets/logo.svg" class="logo" alt="" />
+        <div class="title">LLM Agent POC</div>
+        <span class="badge rounded-pill bg-info-subtle text-info-emphasis">Tools ON</span>
       </div>
-      <div class="d-flex gap-2 align-items-center">
-        <button id="testAipipe" class="btn btn-sm btn-outline-light-soft">Test AiPipe</button>
-        <button id="toggleErrors" class="btn btn-sm btn-outline-light-soft">Errors</button>
-        <button id="clearBtn" class="btn btn-sm btn-danger-soft">Clear</button>
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <small class="author text-nowrap">Author: <strong>24DS1000034-George</strong></small>
+        <button id="btnLogs" class="btn btn-sm btn-outline-light-soft">Logs</button>
+        <button id="btnClear" class="btn btn-sm btn-danger-soft">Clear</button>
       </div>
     </div>
-  </nav>
+  </header>
 
-  <main class="container-fluid py-3">
-    <section class="panel mb-3" aria-label="Settings">
-      <div class="panel-header p-3 pb-2 d-flex justify-content-between align-items-center">
-        <div class="small-muted">Settings (always visible)</div>
-        <div class="d-flex gap-2">
-          <span class="hint-pill">AiPipe default</span>
-          <span class="hint-pill">Auto-fit grid</span>
+  <main class="container py-3">
+    <!-- Settings -->
+    <section class="card glass card-body p-3 mb-3">
+      <div class="row g-2 align-items-end">
+        <div class="col-12 col-md-3">
+          <label class="form-label">Provider</label>
+          <select id="provider" class="form-select form-select-sm">
+            <option value="aipipe" selected>AiPipe (OpenAI compat)</option>
+            <option value="openai">OpenAI-compatible</option>
+            <option value="custom">Custom</option>
+          </select>
         </div>
-      </div>
-      <div class="p-3 pt-2">
-        <div class="settings-grid">
-          <div class="cell">
-            <label class="form-label">Provider</label>
-            <select id="provider" class="form-select form-select-sm">
-              <option value="aipipe" selected>AiPipe (OpenAI compat)</option>
-              <option value="openai">OpenAI-compatible</option>
-              <option value="openrouter">OpenRouter (compat)</option>
-              <option value="perplexity">Perplexity (compat)</option>
-              <option value="gemini">Gemini (OpenAI compat)</option>
-              <option value="custom">Custom</option>
-            </select>
-          </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Model</label>
+          <select id="modelSelect" class="form-select form-select-sm"></select>
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Base URL</label>
+          <input id="baseUrl" class="form-control form-control-sm" placeholder="https://your-aipipe.example.com/openai" />
+          <p class="form-text tiny">POST → <code id="computedUrl">—</code></p>
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">API Key</label>
+          <input id="apiKey" type="password" class="form-control form-control-sm" placeholder="••••••" />
+        </div>
 
-          <div class="cell">
-            <label class="form-label">Model</label>
-            <div class="input-group input-group-sm">
-              <select id="modelSelect" class="form-select"></select>
-              <input id="model" class="form-control" placeholder="Custom model (optional)" />
-            </div>
-            <div class="small-muted mt-1" id="modelHint">Pick from list or type your own.</div>
-          </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Google Key</label>
+          <input id="googleKey" type="password" class="form-control form-control-sm" placeholder="AIza…" />
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Google CX</label>
+          <input id="googleCx" class="form-control form-control-sm" placeholder="CSE ID" />
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">AiPipe Endpoint (tool)</label>
+          <input id="aipipeUrl" class="form-control form-control-sm" placeholder="https://your-aipipe.example.com/proxy" />
+        </div>
 
-          <div class="cell">
-            <label class="form-label">Base URL</label>
-            <input id="baseUrl" class="form-control form-control-sm" placeholder="https://your-aipipe.example.com/openai" />
-          </div>
-
-          <div class="cell">
-            <label class="form-label">Computed Chat URL</label>
-            <div class="form-text" style="color:#cbd5e1">
-              The app will POST to: <code id="computedChatUrl">—</code>
-            </div>
-            <div class="form-text" style="color:#94a3b8">
-              Page origin: <code id="originHost">—</code> · AiPipe must be HTTPS on GitHub Pages & reply to <code>OPTIONS</code> (CORS).
-            </div>
-          </div>
-
-          <div class="cell">
-            <label class="form-label">API Key</label>
-            <input id="apiKey" type="password" class="form-control form-control-sm" placeholder="••••••" />
-          </div>
-          <div class="cell">
-            <label class="form-label">Google Key</label>
-            <input id="googleKey" type="password" class="form-control form-control-sm" placeholder="AIza…" />
-          </div>
-          <div class="cell">
-            <label class="form-label">Google CX</label>
-            <input id="googleCx" class="form-control form-control-sm" placeholder="CSE ID" />
-          </div>
-          <div class="cell wide">
-            <label class="form-label">AiPipe Endpoint (tool)</label>
-            <input id="aipipeUrl" class="form-control form-control-sm" placeholder="https://your-aipipe.example.com/proxy" />
-            <div class="form-text" style="color:#94a3b8">
-              Tool endpoint (separate from chat). Must allow CORS + <code>OPTIONS</code>. Body: <code>{"flow":"...","payload":{...}}</code>
-            </div>
-          </div>
-          <div class="cell small">
-            <label class="form-label">Max loops</label>
-            <input id="maxLoops" type="number" value="6" min="1" class="form-control form-control-sm" />
-          </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label">Max loops</label>
+          <input id="maxLoops" type="number" min="1" value="6" class="form-control form-control-sm" />
         </div>
       </div>
     </section>
 
-    <section id="chat" class="mb-2" aria-label="Conversation">
-      <div class="small-muted mb-2">💡 Tip: ask it to <span class="kbd">search</span>, <span class="kbd">run_js</span>, or call <span class="kbd">aipipe_run</span>.</div>
+    <!-- Chat -->
+    <section id="chat" class="card card-body p-3 mb-2 chat"></section>
+
+    <!-- Composer -->
+    <section class="card glass card-body p-3">
+      <div class="input-group">
+        <textarea id="userInput" class="form-control" rows="2" placeholder="Type a message… (Shift+Enter = newline)"></textarea>
+        <button id="sendBtn" class="btn btn-primary">Send</button>
+      </div>
+      <div class="form-text mt-1">Tools available: <code>google_search</code>, <code>aipipe_run</code>, <code>run_js</code></div>
     </section>
 
-    <section class="panel p-3" aria-label="Composer">
-      <div class="input-group flex-wrap gap-2">
-        <textarea id="userInput" class="form-control" rows="2" placeholder="Type a message and press Enter…"></textarea>
-        <button id="sendBtn" class="btn btn-primary flex-shrink-0">▶ Send</button>
-      </div>
-      <div class="footer-hints mt-2 small-muted d-flex justify-content-between flex-wrap gap-2">
-        <div>Perplexity disables tool-calls; Gemini/OpenAI/OpenRouter/AiPipe enable them.</div>
-        <div><span class="kbd">Shift+Enter</span> for newline</div>
-      </div>
-    </section>
-
-    <section id="errorsPanel" class="panel p-3 mt-3 d-none" aria-label="Errors">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <h6 class="m-0">Request Diagnostics</h6>
-        <button id="clearErrors" class="btn btn-sm btn-outline-light-soft">Clear logs</button>
-      </div>
-      <div id="errors"></div>
-    </section>
-
-    <div class="alert-area" id="alerts"></div>
+    <div id="alerts" class="mt-3"></div>
   </main>
+
+  <!-- Logs Drawer -->
+  <aside id="logsDrawer" class="logs-drawer hidden">
+    <div class="logs-header d-flex justify-content-between align-items-center">
+      <div class="d-flex align-items-center gap-2">
+        <span class="dot"></span>
+        <strong>Logs</strong>
+      </div>
+      <div class="d-flex gap-2">
+        <button id="btnCopyLogs" class="btn btn-sm btn-outline-light-soft">Copy</button>
+        <button id="btnClearLogs" class="btn btn-sm btn-outline-light-soft">Clear</button>
+        <button id="btnCloseLogs" class="btn btn-sm btn-danger-soft">Close</button>
+      </div>
+    </div>
+    <pre id="logs" class="p-3 m-0"></pre>
+  </aside>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="./app.js"></script>
