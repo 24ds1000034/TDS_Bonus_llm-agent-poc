@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>LLM Agent POC — v5 (Detailed Errors + Model Lists)</title>
+  <title>LLM Agent POC — v6 (AiPipe default + Diagnostics)</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link href="./app.css" rel="stylesheet" />
 </head>
@@ -17,6 +17,7 @@
         <span id="toolsBadge" class="badge text-bg-warning text-dark badge-soft">Tools: ON</span>
       </div>
       <div class="d-flex gap-2 align-items-center">
+        <button id="testAipipe" class="btn btn-sm btn-outline-light-soft">Test AiPipe</button>
         <button id="toggleErrors" class="btn btn-sm btn-outline-light-soft">Errors</button>
         <button id="clearBtn" class="btn btn-sm btn-danger-soft">Clear</button>
       </div>
@@ -24,20 +25,26 @@
   </nav>
 
   <main class="container-fluid py-3">
-    <!-- Settings -->
     <section class="panel mb-3" aria-label="Settings">
       <div class="panel-header p-3 pb-2 d-flex justify-content-between align-items-center">
         <div class="small-muted">Settings (always visible)</div>
         <div class="d-flex gap-2">
+          <span class="hint-pill">AiPipe default</span>
           <span class="hint-pill">Auto-fit grid</span>
-          <span class="hint-pill">Eye-comfort palette</span>
         </div>
       </div>
       <div class="p-3 pt-2">
         <div class="settings-grid">
           <div class="cell">
             <label class="form-label">Provider</label>
-            <select id="provider" class="form-select form-select-sm"></select>
+            <select id="provider" class="form-select form-select-sm">
+              <option value="aipipe" selected>AiPipe (OpenAI compat)</option>
+              <option value="openai">OpenAI-compatible</option>
+              <option value="openrouter">OpenRouter (compat)</option>
+              <option value="perplexity">Perplexity (compat)</option>
+              <option value="gemini">Gemini (OpenAI compat)</option>
+              <option value="custom">Custom</option>
+            </select>
           </div>
 
           <div class="cell">
@@ -51,8 +58,19 @@
 
           <div class="cell">
             <label class="form-label">Base URL</label>
-            <input id="baseUrl" class="form-control form-control-sm" placeholder="https://api.openai.com" />
+            <input id="baseUrl" class="form-control form-control-sm" placeholder="https://your-aipipe.example.com/openai" />
           </div>
+
+          <div class="cell">
+            <label class="form-label">Computed Chat URL</label>
+            <div class="form-text" style="color:#cbd5e1">
+              The app will POST to: <code id="computedChatUrl">—</code>
+            </div>
+            <div class="form-text" style="color:#94a3b8">
+              Page origin: <code id="originHost">—</code> · AiPipe must be HTTPS on GitHub Pages & reply to <code>OPTIONS</code> (CORS).
+            </div>
+          </div>
+
           <div class="cell">
             <label class="form-label">API Key</label>
             <input id="apiKey" type="password" class="form-control form-control-sm" placeholder="••••••" />
@@ -66,8 +84,11 @@
             <input id="googleCx" class="form-control form-control-sm" placeholder="CSE ID" />
           </div>
           <div class="cell wide">
-            <label class="form-label">AiPipe Endpoint</label>
+            <label class="form-label">AiPipe Endpoint (tool)</label>
             <input id="aipipeUrl" class="form-control form-control-sm" placeholder="https://your-aipipe.example.com/proxy" />
+            <div class="form-text" style="color:#94a3b8">
+              Tool endpoint (separate from chat). Must allow CORS + <code>OPTIONS</code>. Body: <code>{"flow":"...","payload":{...}}</code>
+            </div>
           </div>
           <div class="cell small">
             <label class="form-label">Max loops</label>
@@ -77,12 +98,10 @@
       </div>
     </section>
 
-    <!-- Chat -->
     <section id="chat" class="mb-2" aria-label="Conversation">
       <div class="small-muted mb-2">💡 Tip: ask it to <span class="kbd">search</span>, <span class="kbd">run_js</span>, or call <span class="kbd">aipipe_run</span>.</div>
     </section>
 
-    <!-- Composer -->
     <section class="panel p-3" aria-label="Composer">
       <div class="input-group flex-wrap gap-2">
         <textarea id="userInput" class="form-control" rows="2" placeholder="Type a message and press Enter…"></textarea>
@@ -94,7 +113,6 @@
       </div>
     </section>
 
-    <!-- Errors Drawer -->
     <section id="errorsPanel" class="panel p-3 mt-3 d-none" aria-label="Errors">
       <div class="d-flex justify-content-between align-items-center mb-2">
         <h6 class="m-0">Request Diagnostics</h6>
