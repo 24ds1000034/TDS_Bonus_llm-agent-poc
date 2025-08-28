@@ -114,7 +114,7 @@ body{
 .btn-send:hover {
   transform: translateY(-2px);
   filter: brightness(1.08);
-  background: rgb(163, 254, 114) !important;   /* ✅ keep same green */
+  background: rgb(235, 254, 114) !important;   /* ✅ keep same green */
   color: #0b1022 !important;                  /* ✅ ensure text stays dark */
 }
 
