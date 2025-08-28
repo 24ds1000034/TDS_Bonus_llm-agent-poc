@@ -28,9 +28,18 @@ const els = {
 
 // Providers (minimal)
 const PROVIDERS = {
-  aipipe: { baseUrl:'https://your-aipipe.example.com/openai', models:['gpt-4o-mini','llama-3.1-70b-instruct'] },
-  openai: { baseUrl:'https://api.openai.com', models:['gpt-4o-mini','gpt-4.1-mini'] },
-  custom: { baseUrl:'', models:['your-model-here'] },
+  aipipe: { 
+    baseUrl:'https://aipipe.org/openai',   // ✅ real default
+    models:['gpt-4o-mini','llama-3.1-70b-instruct'] 
+  },
+  openai: { 
+    baseUrl:'https://api.openai.com', 
+    models:['gpt-4o-mini','gpt-4.1-mini'] 
+  },
+  custom: { 
+    baseUrl:'', 
+    models:['your-model-here'] 
+  },
 };
 
 // OpenAI tool schema
@@ -200,5 +209,123 @@ els.input.addEventListener('keydown', e => { if(e.key==='Enter' && !e.shiftKey){
 // ----- Clear -----
 els.btnClear.addEventListener('click', ()=>{ messages.splice(1); els.chat.innerHTML=''; addMsg('agent','Cleared. Ready.'); });
 
+// === Auto-resize textarea (ChatGPT-like) ===
+(function enableAutoResize() {
+  const ta = document.getElementById('userInput');
+  if (!ta) return;
+
+  const CAP = window.innerHeight * 0.40; // 40vh cap (matches CSS)
+
+  function autoresize() {
+    // Reset height to measure real scroll height
+    ta.style.height = 'auto';
+    // Grow to content
+    const next = Math.min(ta.scrollHeight, CAP);
+    ta.style.height = next + 'px';
+    // Toggle "is-capped" when hitting the limit so it becomes scrollable
+    if (ta.scrollHeight > CAP) ta.classList.add('is-capped'); else ta.classList.remove('is-capped');
+  }
+
+  // Initial adjust when page loads
+  autoresize();
+
+  // Grow/Shrink on input
+  ta.addEventListener('input', autoresize);
+
+  // Keep Shift+Enter for newline, Enter to send (your existing handler already does send)
+  // This is just to ensure the height recalculates immediately after send:
+  const originalSend = (async () => {}); // placeholder to avoid lint errors
+  // If your code defines onSend(), call autoresize after sending:
+  const sendBtn = document.getElementById('sendBtn');
+  if (sendBtn) {
+    const oldClick = sendBtn.onclick; // in case someone used onclick
+    sendBtn.addEventListener('click', () => {
+      // run after your onSend() executes; small delay ensures DOM has cleared the textarea
+      setTimeout(autoresize, 0);
+    });
+  }
+  // Also run after Enter-send via keydown handler
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      // Let your existing handler do the send; then recompute height
+      setTimeout(autoresize, 0);
+    }
+  });
+
+  // Recalculate on window resize (cap depends on viewport)
+  window.addEventListener('resize', autoresize);
+})();
+
+
 // Seed
 addMsg('agent','Ready. Provider is AiPipe by default. Fill Base URL, API key, and Model. Use tools by asking e.g. "search for IBM" or "run_js".');
+
+
+// ... (top of file unchanged)
+
+// ----- Provider & Model -----
+function populateModels(){
+  const p = PROVIDERS[els.provider.value];
+  if (!els.baseUrl.value && p.baseUrl) els.baseUrl.value = p.baseUrl;
+  els.modelSelect.innerHTML='';
+  p.models.forEach(m=>{ const o=document.createElement('option'); o.value=m; o.textContent=m; els.modelSelect.appendChild(o); });
+  updateComputedUrl();
+  persist();
+}
+['provider'].forEach(id=> els[id].addEventListener('change', populateModels));
+['baseUrl','apiKey','modelSelect','googleKey','googleCx','aipipeUrl','maxLoops'].forEach(id => els[id].addEventListener('input', ()=>{ updateComputedUrl(); persist(); }));
+populateModels();
+
+function updateComputedUrl(){
+  const base = (els.baseUrl.value||'').replace(/\/$/,'');
+  const url = base ? (base + '/v1/chat/completions') : '—';
+  if (els.computedUrl) els.computedUrl.textContent = url;   // <-- NULL-SAFE WRITE
+}
+
+// ... (detailedFetch & tools unchanged)
+
+// ----- Agent loop -----
+async function agentLoop(){
+  let loops = 0, MAX = Math.max(parseInt(els.maxLoops.value||'6',10),1);
+  while(true){
+    if(loops++ > MAX){ alertBox('Stopped: max loops'); break; }
+    const payload = { model: els.modelSelect.value, messages, tools: toolsSpec, tool_choice: 'auto' };
+    let data;
+    try{ data = await chatCompletion(payload); }
+    catch(err){ alertBox('LLM step failed: '+String(err), 'danger'); break; }
+
+    const msg = (data.choices && data.choices[0] && data.choices[0].message) || {};
+    const calls = msg.tool_calls || [];
+
+    if (msg.content) addMsg('agent', msg.content);
+
+    // ✅ REQUIRED: push assistant message (with tool_calls) BEFORE tool results
+    messages.push({
+      role: 'assistant',
+      content: msg.content || null,
+      ...(calls.length ? { tool_calls: calls } : {})
+    });
+
+    if(calls.length){
+      for(const tc of calls){
+        const name = tc.function?.name||''; let args={}; try{ args = JSON.parse(tc.function?.arguments||'{}'); }catch{}
+        try{
+          const impl = TOOL_IMPL[name]; if(!impl) throw new Error('Unknown tool '+name);
+          const result = await impl(args);
+          addTool('Tool: '+name, result);
+          messages.push({ role:'tool', tool_call_id: tc.id, content: JSON.stringify(result) });
+        }catch(err){
+          const fail = { ok:false, error:String(err) };
+          addTool('Tool error: '+name, fail);
+          alertBox(`${name} failed: `+String(err), 'danger');
+          messages.push({ role:'tool', tool_call_id: tc.id, content: JSON.stringify(fail) });
+        }
+      }
+      continue; // loop again
+    } else {
+      break; // wait for next user input
+    }
+  }
+}
+
+// ... (input handler, clear, auto-resize, seed, robust bind unchanged)
