@@ -56,12 +56,30 @@ const messages = [{ role:'system', content:'You are a minimal browser LLM agent.
 function esc(s){ return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
 function addMsg(kind, text){ const el=document.createElement('div'); el.className=`p-2 mb-2 msg ${kind}`; el.innerHTML=esc(text); els.chat.appendChild(el); els.chat.scrollTop=els.chat.scrollHeight; }
 function addTool(title, obj){ const el=document.createElement('div'); el.className='p-2 mb-2 msg tool'; el.innerHTML=`<div class="fw-semibold">${esc(title)}</div><pre class="m-0">${esc(JSON.stringify(obj,null,2))}</pre>`; els.chat.appendChild(el); els.chat.scrollTop=els.chat.scrollHeight; }
-function alertBox(msg, variant='warning'){ const id='al_'+Math.random().toString(36).slice(2); els.alerts.insertAdjacentHTML('beforeend', `<div id="${id}" class="alert alert-${variant} alert-dismissible fade show" role="alert">${esc(msg)}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>`); setTimeout(()=>{ const el=document.getElementById(id); if(el) bootstrap.Alert.getOrCreateInstance(el).close(); }, 6000); }
+function alertBox(msg, variant='warning'){
+  const id='al_'+Math.random().toString(36).slice(2);
+  els.alerts.insertAdjacentHTML('beforeend',
+    `<div id="${id}" class="alert alert-${variant} alert-dismissible fade show" role="alert">
+       ${esc(msg)}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+     </div>`);
+  if (variant === 'danger') openLogs();   // <-- open Logs when danger
+  setTimeout(()=>{
+    const el=document.getElementById(id);
+    if(el) bootstrap.Alert.getOrCreateInstance(el).close();
+  }, 6000);
+}
 
 // ----- Logs -----
 const logBuffer = [];
-function log(kind, payload){ const ts = new Date().toISOString(); const entry = { ts, kind, ...payload }; logBuffer.push(entry); renderLogs(); }
+function log(kind, payload){
+  const ts = new Date().toISOString();
+  const entry = { ts, kind, ...payload };
+  logBuffer.push(entry);
+  renderLogs();
+  if (kind === 'error') openLogs();   // <-- auto-open Logs on any error
+}
 function renderLogs(){ els.logs.textContent = logBuffer.map(e => JSON.stringify(e)).join('\n'); }
+function openLogs(){ els.logsDrawer.classList.remove('hidden'); }
 function toggleLogs(){ els.logsDrawer.classList.toggle('hidden'); }
 els.btnLogs.addEventListener('click', toggleLogs);
 els.btnCloseLogs.addEventListener('click', toggleLogs);
@@ -113,7 +131,10 @@ async function detailedFetch(url, options, context = {}){
 // ----- Tools -----
 async function tool_google_search(args){
   const key = els.googleKey.value.trim(), cx = els.googleCx.value.trim();
-  if(!key || !cx) throw new Error('Missing Google Key/CX');
+  if(!key || !cx){
+    log('error', { type:'missing_google_config', key: !!key, cx: !!cx });
+    throw new Error('Missing Google Key/CX');
+  }
   const num = Math.max(1, Math.min(10, parseInt(args.num||5,10)));
   const url = new URL('https://www.googleapis.com/customsearch/v1');
   url.searchParams.set('key', key); url.searchParams.set('cx', cx); url.searchParams.set('q', args.query); url.searchParams.set('num', String(num));
@@ -124,7 +145,10 @@ async function tool_google_search(args){
 
 async function tool_aipipe_run(args){
   const endpoint = (args.endpoint || els.aipipeUrl.value).trim();
-  if(!endpoint) throw new Error('Missing AiPipe Endpoint');
+  if(!endpoint){
+    log('error', { type:'missing_aipipe_endpoint' });
+    throw new Error('Missing AiPipe Endpoint');
+  }
   const body = JSON.stringify({ flow: args.flow, payload: args.payload });
   return await detailedFetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body }, { tool:'aipipe_run', endpoint, flow: args.flow });
 }
@@ -139,7 +163,7 @@ function runInWorker(code, timeoutMs = 2000){
       const timeout = new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timeout exceeded')), timeoutMs));
       const started=Date.now(); const result = await Promise.race([exec, timeout]);
       postMessage({ ok:true, result, logs, timeMs: Date.now()-started });
-    }catch(err){ postMessage({ ok:false, error:String(err), logs }); } }`;
+    }catch(err){log('error', { type:'run_js', error: String(err) }); postMessage({ ok:false, error:String(err), logs }); } }`;
   const blob = new Blob([workerCode], { type:'text/javascript' }); const worker = new Worker(URL.createObjectURL(blob));
   return new Promise((resolve)=>{
     const timer = setTimeout(()=>{ try{worker.terminate();}catch{} resolve({ ok:false, error:'Worker aborted (hard timeout)' }); }, Math.max(timeoutMs+250, 1500));
@@ -155,41 +179,145 @@ const TOOL_IMPL = { google_search: tool_google_search, aipipe_run: tool_aipipe_r
 async function chatCompletion(payload){
   const base = (els.baseUrl.value||'').replace(/\/$/,'');
   const key = els.apiKey.value.trim();
+
+  // Basic presence
+  if (!key) {
+    alertBox('Missing API Key','danger');
+    log('error', { type:'missing_api_key', provider: els.provider.value, baseUrl: base });
+    throw new Error('Missing API Key');
+  }
+
+  if (key.startsWith('{') || key.includes('"ts"') || key.includes('"kind"')) {
+    alertBox('API Key looks invalid (you pasted logs instead of a token)','danger');
+    log('error', { type:'invalid_api_key_format', sample: key.slice(0, 40) });
+    throw new Error('Invalid API Key format');
+  }
+
+  // Sanity checks: reject pasted logs / JSON / obviously wrong keys
+  const looksLikeJson = key.startsWith('{') || key.includes('"ts"') || key.includes('"kind"') || key.includes('context');
+  const hasWhitespace = /\s{2,}|\n|\r/.test(key);           // multi-space or newlines
+  if (looksLikeJson || hasWhitespace) {
+    alertBox('API Key looks invalid (contains JSON/newlines). Paste the actual token only.','danger');
+    log('error', { type:'invalid_api_key_format', sample: key.slice(0, 32) });
+    throw new Error('Invalid API Key format');
+  }
+
+  if(!payload.model){
+    alertBox('Missing Model','danger');
+    log('error', { type:'missing_model', provider: els.provider.value, baseUrl: base });
+    throw new Error('Missing Model');
+  }
+
   const url = base + '/v1/chat/completions';
-  const headers = { 'Content-Type':'application/json', 'Authorization': 'Bearer '+key };
-  return await detailedFetch(url, { method:'POST', headers, body: JSON.stringify(payload) }, { kind:'chat', provider: els.provider.value, model: payload.model, tools: !!payload.tools });
+  const headers = { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + key };
+
+  return await detailedFetch(
+    url,
+    { method:'POST', headers, body: JSON.stringify(payload) },
+    { kind:'chat', provider: els.provider.value, model: payload.model, tools: !!payload.tools }
+  );
+}
+
+
+async function testCredentials(){
+  const base = (els.baseUrl.value||'').replace(/\/$/,'');
+  const key = els.apiKey.value.trim();
+  try{
+    const res = await detailedFetch(
+      base + '/v1/models',
+      { method:'GET', headers:{ 'Authorization':'Bearer ' + key } },
+      { kind:'models_test' }
+    );
+    alertBox('Credentials OK: models listed','success');
+    addTool('Models response', res);
+  }catch(e){
+    alertBox('Credential test failed: ' + String(e),'danger');
+    log('error', { type:'credential_test_failed', error: String(e) });
+  }
 }
 
 // ----- Agent loop -----
 async function agentLoop(){
   let loops = 0, MAX = Math.max(parseInt(els.maxLoops.value||'6',10),1);
   while(true){
-    if(loops++ > MAX){ alertBox('Stopped: max loops'); break; }
+    if (loops++ > MAX) { 
+      alertBox('Stopped: max loops','warning'); 
+      log('error', { type:'max_loops_reached', max: MAX });
+      break; 
+    }
+
     const payload = { model: els.modelSelect.value, messages, tools: toolsSpec, tool_choice: 'auto' };
     let data;
-    try{ data = await chatCompletion(payload); }
-    catch(err){ alertBox('LLM step failed: '+String(err), 'danger'); break; }
-    const msg = (data.choices && data.choices[0] && data.choices[0].message) || {};
-    if(msg.content) addMsg('agent', msg.content);
+
+    try {
+      data = await chatCompletion(payload);
+    } catch (err) {
+      // Network/CORS/HTTP errors are already logged in detailedFetch, but show in chat too
+      addMsg('agent', 'Request failed: ' + String(err));
+      log('error', { type:'llm_request_failed', error: String(err) });
+      break;
+    }
+
+    // 1) If server returned OpenAI-style error object, surface it
+    if (data && data.error) {
+      const msgTxt = 'LLM error: ' + (data.error.message || JSON.stringify(data.error));
+      addMsg('agent', msgTxt);
+      addTool('LLM raw error', data.error);
+      log('error', { type:'llm_response_error', error: data.error });
+      break;
+    }
+
+    // 2) Validate choices array
+    if (!data || !Array.isArray(data.choices) || data.choices.length === 0) {
+      addMsg('agent', 'No choices received from LLM.');
+      addTool('LLM raw response (no choices)', data || { note:'null/undefined' });
+      log('error', { type:'no_choices', details: (data && Object.keys(data)) || 'null' });
+      break;
+    }
+
+    const msg = (data.choices[0] && data.choices[0].message) || {};
     const calls = msg.tool_calls || [];
-    if(calls.length){
-      for(const tc of calls){
-        const name = tc.function?.name||''; let args={}; try{ args = JSON.parse(tc.function?.arguments||'{}'); }catch{}
-        try{
-          const impl = TOOL_IMPL[name]; if(!impl) throw new Error('Unknown tool '+name);
+
+    // 3) Always display content if present; otherwise show a helpful marker
+    if (msg.content && msg.content.trim()) {
+      addMsg('agent', msg.content);
+    } else if (!calls.length) {
+      addMsg('agent', '(No text content from LLM)');
+      addTool('LLM raw message (no content)', msg);
+    }
+
+    // 4) Push assistant message (with tool_calls) BEFORE sending tool results back
+    messages.push({
+      role: 'assistant',
+      content: msg.content || null,
+      ...(calls.length ? { tool_calls: calls } : {})
+    });
+
+    // 5) Handle tool calls (if any)
+    if (calls.length){
+      for (const tc of calls){
+        const name = tc.function?.name || '';
+        let args = {};
+        try { args = JSON.parse(tc.function?.arguments || '{}'); } catch {}
+        try {
+          const impl = TOOL_IMPL[name];
+          if (!impl) throw new Error('Unknown tool ' + name);
           const result = await impl(args);
-          addTool('Tool: '+name, result);
+          addTool('Tool: ' + name, result);
           messages.push({ role:'tool', tool_call_id: tc.id, content: JSON.stringify(result) });
-        }catch(err){
+        } catch (err) {
           const fail = { ok:false, error:String(err) };
-          addTool('Tool error: '+name, fail);
-          alertBox(`${name} failed: `+String(err), 'danger');
+          addTool('Tool error: ' + name, fail);
+          alertBox(`${name} failed: ` + String(err), 'danger');
+          log('error', { type:'tool_failed', tool:name, error:String(err) });
           messages.push({ role:'tool', tool_call_id: tc.id, content: JSON.stringify(fail) });
         }
       }
-      continue; // loop again
+      // Loop again to let LLM consume tool outputs
+      continue;
     } else {
-      break; // wait for next user input
+      // No tools requested; stop loop and wait for next user input
+      break;
     }
   }
 }
@@ -197,7 +325,15 @@ async function agentLoop(){
 // ----- Input -----
 async function onSend(){
   const text = els.input.value.trim();
-  if(!text) return;
+  if (!text) return;
+
+  // Mandatory fields check
+  if (!els.provider.value || !els.modelSelect.value || !els.baseUrl.value.trim() || !els.apiKey.value.trim()) {
+    alertBox('Please fill all mandatory fields (Provider, Model, Base URL, API Key).','danger');
+    log('error', { type:'missing_required_fields', provider: els.provider.value, model: els.modelSelect.value });
+    return;
+  }
+
   els.input.value='';
   addMsg('user', text);
   messages.push({ role:'user', content:text });
@@ -228,7 +364,8 @@ els.btnClear.addEventListener('click', ()=>{ messages.splice(1); els.chat.innerH
 
   // Initial adjust when page loads
   autoresize();
-
+  const btnTest = document.getElementById('btnTest');
+  if (btnTest) btnTest.addEventListener('click', testCredentials);
   // Grow/Shrink on input
   ta.addEventListener('input', autoresize);
 
@@ -293,6 +430,11 @@ async function agentLoop(){
     let data;
     try{ data = await chatCompletion(payload); }
     catch(err){ alertBox('LLM step failed: '+String(err), 'danger'); break; }
+    if (data.error) {
+      alertBox("LLM error: " + (data.error.message || JSON.stringify(data.error)), 'danger');
+      log('error', { type:'llm_response_error', details: data.error });
+      break;
+    }
 
     const msg = (data.choices && data.choices[0] && data.choices[0].message) || {};
     const calls = msg.tool_calls || [];

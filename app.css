@@ -162,3 +162,8 @@ body{
 .logs-resizer:hover {
   background: rgba(255,255,255,.1);
 }
+
+input:invalid, select:invalid {
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 .15rem rgba(239,68,68,.25) !important;
+}
